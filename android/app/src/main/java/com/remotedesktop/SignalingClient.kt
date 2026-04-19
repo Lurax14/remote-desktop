@@ -3,10 +3,8 @@ package com.remotedesktop
 import io.socket.client.IO
 import io.socket.client.Socket
 import org.json.JSONObject
-
-// Lightweight data class used instead of org.webrtc.IceCandidate so that
-// companion-object logic is testable on the JVM without the Android AAR.
-data class IceCandidateData(val sdpMid: String, val sdpMLineIndex: Int, val sdp: String)
+import org.webrtc.IceCandidate
+import org.webrtc.SessionDescription
 
 class SignalingClient(
     private val serverUrl: String,
@@ -14,9 +12,9 @@ class SignalingClient(
     private val listener: Listener
 ) {
     interface Listener {
-        fun onOffer(sdpType: String, sdpDescription: String)
-        fun onAnswer(sdpType: String, sdpDescription: String)
-        fun onIceCandidate(candidate: IceCandidateData)
+        fun onOffer(sdp: SessionDescription)
+        fun onAnswer(sdp: SessionDescription)
+        fun onIceCandidate(candidate: IceCandidate)
         fun onPeerReady()
     }
 
@@ -33,12 +31,16 @@ class SignalingClient(
 
         socket.on("offer") { args ->
             val obj = args[0] as JSONObject
-            listener.onOffer("offer", obj.getString("sdp"))
+            listener.onOffer(
+                SessionDescription(SessionDescription.Type.OFFER, obj.getString("sdp"))
+            )
         }
 
         socket.on("answer") { args ->
             val obj = args[0] as JSONObject
-            listener.onAnswer("answer", obj.getString("sdp"))
+            listener.onAnswer(
+                SessionDescription(SessionDescription.Type.ANSWER, obj.getString("sdp"))
+            )
         }
 
         socket.on("ice-candidate") { args ->
@@ -55,29 +57,29 @@ class SignalingClient(
         socket.connect()
     }
 
-    fun sendOffer(sdpType: String, sdpDescription: String) {
+    fun sendOffer(sdp: SessionDescription) {
         val obj = JSONObject().apply {
             put("roomId", roomId)
             put("sdp", JSONObject().apply {
-                put("type", sdpType)
-                put("sdp", sdpDescription)
+                put("type", sdp.type.canonicalForm())
+                put("sdp", sdp.description)
             })
         }
         socket.emit("offer", obj)
     }
 
-    fun sendAnswer(sdpType: String, sdpDescription: String) {
+    fun sendAnswer(sdp: SessionDescription) {
         val obj = JSONObject().apply {
             put("roomId", roomId)
             put("sdp", JSONObject().apply {
-                put("type", sdpType)
-                put("sdp", sdpDescription)
+                put("type", sdp.type.canonicalForm())
+                put("sdp", sdp.description)
             })
         }
         socket.emit("answer", obj)
     }
 
-    fun sendIceCandidate(candidate: IceCandidateData) {
+    fun sendIceCandidate(candidate: IceCandidate) {
         val obj = JSONObject().apply {
             put("roomId", roomId)
             put("candidate", JSONObject().apply {
@@ -92,13 +94,13 @@ class SignalingClient(
     fun disconnect() = socket.disconnect()
 
     companion object {
-        fun parseCandidate(map: Map<String, Any?>): IceCandidateData? {
+        fun parseCandidate(map: Map<String, Any?>): IceCandidate? {
             val sdp = map["candidate"] as? String ?: return null
             if (sdp.isBlank()) return null
-            return IceCandidateData(
-                sdpMid = map["sdpMid"] as? String ?: "0",
-                sdpMLineIndex = (map["sdpMLineIndex"] as? Int) ?: 0,
-                sdp = sdp
+            return IceCandidate(
+                map["sdpMid"] as? String ?: "0",
+                (map["sdpMLineIndex"] as? Int) ?: 0,
+                sdp
             )
         }
     }
