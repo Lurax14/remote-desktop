@@ -2,23 +2,16 @@
 const { createServer } = require('http')
 const { Server } = require('socket.io')
 const { io: ioClient } = require('socket.io-client')
+const { attachHandlers } = require('../server')
 
-let serverInstance, ioInstance, port
+let serverInstance, port
 
 beforeAll((done) => {
   const httpServer = createServer()
-  ioInstance = new Server(httpServer, { cors: { origin: '*' } })
+  const ioInstance = new Server(httpServer, { cors: { origin: '*' } })
 
-  ioInstance.on('connection', (socket) => {
-    socket.on('join', (roomId) => {
-      socket.join(roomId)
-      const room = ioInstance.sockets.adapter.rooms.get(roomId)
-      if (room && room.size > 1) socket.to(roomId).emit('peer-ready')
-    })
-    socket.on('offer', ({ roomId, sdp }) => socket.to(roomId).emit('offer', sdp))
-    socket.on('answer', ({ roomId, sdp }) => socket.to(roomId).emit('answer', sdp))
-    socket.on('ice-candidate', ({ roomId, candidate }) => socket.to(roomId).emit('ice-candidate', candidate))
-  })
+  // Use the real handler logic from server.js — no duplication
+  attachHandlers(ioInstance)
 
   httpServer.listen(() => {
     port = httpServer.address().port
@@ -27,9 +20,8 @@ beforeAll((done) => {
   })
 })
 
-afterAll(() => {
-  ioInstance.close()
-  serverInstance.close()
+afterAll((done) => {
+  serverInstance.close(done)
 })
 
 test('segundo cliente recebe peer-ready ao entrar na sala', (done) => {
@@ -39,14 +31,18 @@ test('segundo cliente recebe peer-ready ao entrar na sala', (done) => {
   // server emits 'peer-ready' to everyone already in the room when a new
   // client joins — so c1 (first joiner) receives it when c2 joins
   c1.on('peer-ready', () => {
-    c1.disconnect(); c2.disconnect()
+    c1.disconnect()
+    c2.disconnect()
     done()
   })
 
+  // Wait for c1 to connect and join before c2 joins, to avoid a race condition
   c1.on('connect', () => {
     c1.emit('join', 'sala-teste')
-    // wait for c1's join to be processed server-side before c2 joins
-    setTimeout(() => c2.emit('join', 'sala-teste'), 100)
+    // Wait for c2 to connect, then join sequentially after c1's join is processed
+    c2.on('connect', () => {
+      c2.emit('join', 'sala-teste')
+    })
   })
 }, 10000)
 
@@ -54,14 +50,57 @@ test('offer é retransmitido para o outro cliente', (done) => {
   const c1 = ioClient(`http://localhost:${port}`)
   const c2 = ioClient(`http://localhost:${port}`)
 
-  c1.emit('join', 'sala-offer')
-  c2.emit('join', 'sala-offer')
-
   c2.on('offer', (sdp) => {
     expect(sdp).toBe('fake-sdp')
-    c1.disconnect(); c2.disconnect()
+    c1.disconnect()
+    c2.disconnect()
     done()
   })
 
-  setTimeout(() => c1.emit('offer', { roomId: 'sala-offer', sdp: 'fake-sdp' }), 200)
-})
+  // Join both clients sequentially via connect events, then send offer
+  c1.on('connect', () => {
+    c1.emit('join', 'sala-offer')
+    c2.on('connect', () => {
+      c2.emit('join', 'sala-offer')
+      // c1 sends offer after both are in the room
+      c1.emit('offer', { roomId: 'sala-offer', sdp: 'fake-sdp' })
+    })
+  })
+}, 10000)
+
+test('terceiro cliente recebe room-full e não entra na sala', (done) => {
+  const c1 = ioClient(`http://localhost:${port}`)
+  const c2 = ioClient(`http://localhost:${port}`)
+  const c3 = ioClient(`http://localhost:${port}`)
+
+  c3.on('room-full', () => {
+    c1.disconnect()
+    c2.disconnect()
+    c3.disconnect()
+    done()
+  })
+
+  c1.on('connect', () => {
+    c1.emit('join', 'sala-cheia')
+    c2.on('connect', () => {
+      c2.emit('join', 'sala-cheia')
+      c3.on('connect', () => {
+        c3.emit('join', 'sala-cheia')
+      })
+    })
+  })
+}, 10000)
+
+test('join ignora roomId inválido (não-string)', (done) => {
+  const c1 = ioClient(`http://localhost:${port}`)
+
+  // Send an invalid roomId — server should silently ignore it (no crash)
+  c1.on('connect', () => {
+    c1.emit('join', 12345)
+    // If the server didn't crash within 300ms, we're good
+    setTimeout(() => {
+      c1.disconnect()
+      done()
+    }, 300)
+  })
+}, 5000)
