@@ -6,8 +6,7 @@ import org.webrtc.VideoTrack
 
 class MainActivity : AppCompatActivity() {
 
-    // ⚠️ Substituir pela URL real do servidor Render.com após deploy (Task 10)
-    private val SIGNALING_URL = "https://SEU-APP.onrender.com"
+    private val SIGNALING_URL = "https://remote-desktop-vf65.onrender.com"
     private val ROOM_ID = "meu-desktop"
 
     private lateinit var remoteView: RemoteSurfaceView

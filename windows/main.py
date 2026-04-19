@@ -3,7 +3,7 @@ import asyncio
 import sys
 from peer import RemoteDesktopPeer
 
-SIGNALING_URL = 'https://SEU-APP.onrender.com'  # substituir após deploy
+SIGNALING_URL = 'https://remote-desktop-vf65.onrender.com'
 ROOM_ID = 'meu-desktop'
 
 async def main():
