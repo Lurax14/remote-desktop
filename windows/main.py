@@ -13,7 +13,7 @@ async def main():
     print('[RD] Aguardando cliente Android conectar...')
     try:
         await peer.connect()
-    except KeyboardInterrupt:
+    finally:
         await peer.close()
 
 if __name__ == '__main__':

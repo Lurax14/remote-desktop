@@ -2,6 +2,7 @@
 import asyncio
 import socketio
 from aiortc import RTCPeerConnection, RTCSessionDescription, RTCConfiguration, RTCIceServer
+from aiortc.sdp import candidate_from_sdp
 from capture import ScreenCaptureTrack
 from input_handler import handle_input_event
 
@@ -49,24 +50,24 @@ class RemoteDesktopPeer:
         @self._sio.on('ice-candidate')
         async def on_ice(candidate):
             if candidate:
-                from aiortc import RTCIceCandidate
-                await self._pc.addIceCandidate(RTCIceCandidate(
-                    sdpMid=candidate.get('sdpMid'),
-                    sdpMLineIndex=candidate.get('sdpMLineIndex'),
-                    candidate=candidate.get('candidate', '')
-                ))
+                sdp_str = candidate.get('candidate', '')
+                if sdp_str:
+                    ice = candidate_from_sdp(sdp_str.split(':', 1)[-1])
+                    ice.sdpMid = candidate.get('sdpMid')
+                    ice.sdpMLineIndex = candidate.get('sdpMLineIndex')
+                    await self._pc.addIceCandidate(ice)
 
         @self._pc.on('icecandidate')
-        async def on_local_ice(candidate):
+        def on_local_ice(candidate):
             if candidate:
-                await self._sio.emit('ice-candidate', {
+                asyncio.ensure_future(self._sio.emit('ice-candidate', {
                     'roomId': self._room,
                     'candidate': {
                         'candidate': candidate.candidate,
                         'sdpMid': candidate.sdpMid,
                         'sdpMLineIndex': candidate.sdpMLineIndex
                     }
-                })
+                }))
 
         await self._sio.connect(self._url)
         await self._sio.emit('join', self._room)
