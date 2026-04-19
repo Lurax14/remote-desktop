@@ -68,7 +68,8 @@ class WebRTCManager(
     override fun onOffer(sdp: SessionDescription) {
         peerConnection?.setRemoteDescription(SimpleSdpObserver(), sdp)
         peerConnection?.createAnswer(object : SimpleSdpObserver() {
-            override fun onCreateSuccess(desc: SessionDescription) {
+            override fun onCreateSuccess(desc: SessionDescription?) {
+                desc ?: return
                 peerConnection?.setLocalDescription(SimpleSdpObserver(), desc)
                 signalingClient.sendAnswer(desc)
             }
