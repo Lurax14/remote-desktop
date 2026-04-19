@@ -1,7 +1,7 @@
 import json
 import screeninfo
 from pynput.mouse import Controller as MouseController, Button
-from pynput.keyboard import Controller as KeyboardController
+from pynput.keyboard import Controller as KeyboardController, Key
 
 mouse = MouseController()
 keyboard = KeyboardController()
@@ -18,6 +18,14 @@ def _get_screen_size() -> tuple[int, int]:
     return monitor.width, monitor.height
 
 
+def _parse_key(key_name: str):
+    """Try to map to pynput Key enum, fall back to raw char, or None if unhandleable."""
+    try:
+        return Key[key_name]
+    except KeyError:
+        return key_name if len(key_name) == 1 else None
+
+
 def handle_input_event(raw: str) -> None:
     try:
         event = json.loads(raw)
@@ -27,10 +35,15 @@ def handle_input_event(raw: str) -> None:
     kind = event.get('type')
 
     if kind == 'mouse_move':
-        sw = event.get('screen_w') or _get_screen_size()[0]
-        sh = event.get('screen_h') or _get_screen_size()[1]
-        x = int(event['x'] * sw)
-        y = int(event['y'] * sh)
+        sw = event.get('screen_w')
+        sh = event.get('screen_h')
+        if sw is None or sh is None:
+            sw, sh = _get_screen_size()
+        try:
+            x = int(float(event['x']) * sw)
+            y = int(float(event['y']) * sh)
+        except (KeyError, TypeError, ValueError):
+            return
         mouse.position = (x, y)
 
     elif kind == 'mouse_click':
@@ -45,7 +58,11 @@ def handle_input_event(raw: str) -> None:
         keyboard.type(event.get('text', ''))
 
     elif kind == 'key_press':
-        keyboard.press(event.get('key', ''))
+        k = _parse_key(event.get('key', ''))
+        if k is not None:
+            keyboard.press(k)
 
     elif kind == 'key_release':
-        keyboard.release(event.get('key', ''))
+        k = _parse_key(event.get('key', ''))
+        if k is not None:
+            keyboard.release(k)
